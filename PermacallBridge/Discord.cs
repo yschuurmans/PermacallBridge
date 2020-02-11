@@ -1,4 +1,5 @@
 ﻿using Discord;
+using Discord.Audio;
 using Discord.Commands;
 using Discord.WebSocket;
 using Microsoft.Extensions.Configuration;
@@ -14,6 +15,7 @@ namespace PermacallBridge
 {
     public class Discord : IVoiceApp
     {
+        private DateTime lastReboot;
         private readonly CommandService discordCommands;
         private readonly DiscordSocketClient discordClient;
 
@@ -21,7 +23,8 @@ namespace PermacallBridge
         private readonly ILogger<Discord> logger;
 
         private List<string> previousDiscordUsers = new List<string>();
-        private List<string> discordUsers = new List<string>();
+
+        public List<string> Users { get; private set; } = new List<string>();
 
         private const string discordProcessName = "Discord";
 
@@ -32,7 +35,8 @@ namespace PermacallBridge
             this.configuration = configuration;
             this.logger = logger;
 
-            InitializeAsync();
+            lastReboot = DateTime.Now;
+            InitializeAsync().Wait();
         }
 
         private async Task InitializeAsync()
@@ -72,10 +76,23 @@ namespace PermacallBridge
                 .VoiceChannels.FirstOrDefault(x => x.Name == voiceChannel)
                 .Users.Where(x => !(x.Username == username && x.Discriminator == discriminator));
 
-            discordUsers.Clear();
-            discordUsers.AddRange(users.Select(x => x.Nickname));
+            Users.Clear();
+            Users.AddRange(users.Select(x => x.Nickname));
 
-            return Task.FromResult(users.Count() > 0);
+            var anyoneOnline = users.Count() > 0;
+
+            if (!anyoneOnline && (DateTime.Now - lastReboot).TotalMinutes > 10 && IsRunning)
+            {
+                Reboot();
+            }
+
+            return Task.FromResult(anyoneOnline);
+        }
+
+        private async Task Reboot()
+        {
+            await Quit();
+            await Run();
         }
 
         public Task Quit()
@@ -84,7 +101,9 @@ namespace PermacallBridge
             {
                 foreach (var process in Process.GetProcessesByName(discordProcessName))
                 {
+#if !DEBUG
                     process.Kill();
+#endif
                 }
             }
             catch (Exception e)
@@ -99,10 +118,13 @@ namespace PermacallBridge
         public Task Run()
         {
             Process proc = new Process();
+#if !DEBUG
             proc.StartInfo.FileName = @"C:\servers\teamspeak\PermacallBridge\Discord.lnk";
             proc.StartInfo.UseShellExecute = true;
             proc.Start();
+#endif
 
+            lastReboot = DateTime.Now;
             return Task.CompletedTask;
         }
 
@@ -113,19 +135,44 @@ namespace PermacallBridge
             return Task.CompletedTask;
         }
 
-        //private bool PostTeamspeakUsersToDiscord()
-        //{
-        //    var users = _client
-        //        .Guilds.FirstOrDefault(x => x.Name == "Permacall")
-        //        .VoiceChannels.FirstOrDefault(x => x.Name == "Permacall")
-        //        .Users.Where(x => x.Username != "PermacallBridge");
+        public async void PostNames(List<string> users)
+        {
+            string server = configuration.GetSection("Discord:Server").Value;
+            string voiceChannel = configuration.GetSection("Discord:Voicechannel").Value;
+            string username = configuration.GetSection("Discord:Username").Value;
+            string discriminator = configuration.GetSection("Discord:Discriminator").Value;
 
-        //    previousDiscordUsers.Clear();
-        //    previousDiscordUsers.AddRange(discordUsers);
-        //    discordUsers.Clear();
-        //    discordUsers.AddRange(users.Select(x => x.Nickname));
+            var bridgeUser = discordClient
+                .Guilds.FirstOrDefault(x => x.Name == server)
+                .VoiceChannels.FirstOrDefault(x => x.Name == voiceChannel)
+                .Users.FirstOrDefault(x => x.Username == username && x.Discriminator == discriminator);
 
-        //    return users.Count() > 0;
-        //}
+
+
+
+            if (bridgeUser == null) return;
+
+            await bridgeUser.ModifyAsync(x=>x.Nickname = string.Join(", ", users));
+        }
+
+        Task<bool> IVoiceApp.AnyoneOnline()
+        {
+            throw new NotImplementedException();
+        }
+
+        void IVoiceApp.PostNames(List<string> users)
+        {
+            throw new NotImplementedException();
+        }
+
+        Task IVoiceApp.Quit()
+        {
+            throw new NotImplementedException();
+        }
+
+        Task IVoiceApp.Run()
+        {
+            throw new NotImplementedException();
+        }
     }
 }

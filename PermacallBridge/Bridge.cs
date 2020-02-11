@@ -17,8 +17,6 @@ namespace PermacallBridge
 {
     public class Bridge : IHostedService, IDisposable
     {
-        private readonly IConfiguration configuration;
-
         private readonly Teamspeak teamspeak;
         private readonly Discord discord;
         private readonly ILogger<Bridge> logger;
@@ -34,11 +32,12 @@ namespace PermacallBridge
         {
             await Task.Delay(3000);
             logger.LogInformation("Ready");
+            await CheckTeamspeak();
             while (true)
             {
                 try
                 {
-                    CheckDiscord();
+                    await CheckDiscord();
                     Thread.Sleep(10000);
 
                 }
@@ -49,7 +48,7 @@ namespace PermacallBridge
                 }
                 try
                 {
-                    CheckTeamspeak();
+                    await CheckTeamspeak();
                     Thread.Sleep(10000);
                 }
                 catch (Exception e)
@@ -104,6 +103,11 @@ namespace PermacallBridge
             {
                 Log("Stopping Discord");
                 await discord.Quit();
+            }
+
+            if(isRunning)
+            {
+                discord.PostNames(teamspeak.Users);
             }
         }
 
