@@ -38,12 +38,19 @@ namespace PermacallBridge
 
                   services.AddSingleton(new CommandService());
                   services.AddSingleton(new DiscordSocketClient());
-                                    
+
+                  services.AddSingleton<Teamspeak, Teamspeak>();
+                  services.AddSingleton<Discord, Discord>();
+                  //services.AddSingleton(new DiscordSocketClient());
+
                   services.AddSingleton<IHostedService, Bridge>();
               })
               .ConfigureLogging((hostingContext, logging) => {
+                  logging.AddProvider(new CompactLogger());
+                  //loggerFactory.AddProvider(new CustomLoggerProvider());
+
                   logging.AddConfiguration(hostingContext.Configuration.GetSection("Logging"));
-                  logging.AddConsole();
+                  //logging.AddConsole();
               });
             await Task.Delay(1000);
             await builder.RunConsoleAsync();

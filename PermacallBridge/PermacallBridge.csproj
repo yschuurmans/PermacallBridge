@@ -29,12 +29,8 @@
     <None Update="appsettings.example.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <SubType>Designer</SubType>
-      <LastGenOutput>appsettings.Designer.cs</LastGenOutput>
-      <Generator>MSDataSetGenerator</Generator>
     </None>
     <None Update="appsettings.json">
-      <Generator>MSDataSetGenerator</Generator>
-      <LastGenOutput>appsettings.Designer.cs</LastGenOutput>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
