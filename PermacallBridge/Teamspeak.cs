@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using TeamSpeak3QueryApi.Net.Specialized;
+using PrimS.Telnet;
 
 namespace PermacallBridge
 {
@@ -122,29 +123,41 @@ namespace PermacallBridge
             return Task.CompletedTask;
         }
 
-        public async void PostNames(List<string> users)
+        public async Task PostNames(List<string> users)
         {
-            //try
-            //{
-            //    using (var rc = new TeamSpeakClient("permacall.nl", 10011))
-            //    {
-            //        // Create rich client instance
-            //        ConnectAndLogin(rc);
-
-            //        var clients = await rc.GetClients();
-            //        var bridgeUser = clients.FirstOrDefault(x => x.ChannelId == 1 && x.DatabaseId != 1045);
-            //        var bridgeClientInfo = await rc.GetClientInfo(bridgeUser.Id);
-
-            //        bridgeClientInfo.Description = String.Join("\r\n", users);
-
-            //        await rc.Logout();
-            //    }
-            //}
-            //catch (Exception e)
-            //{
-            //    logger.LogWarning(e.Message);
-            //    logger.LogWarning(e.StackTrace);
-            //}
+            string clientHost = configuration.GetSection("Teamspeak:Client:Host").Value;
+            int clientPort = Convert.ToInt32(configuration.GetSection("Teamspeak:Client:Port").Value);
+            string clientApiKey = configuration.GetSection("Teamspeak:Client:ApiKey").Value;
+#if !DEBUG
+            //connect to telnet
+            try
+            {
+                logger.LogInformation("Connecting to telnet");
+                using (Client client = new Client(clientHost, clientPort, new System.Threading.CancellationToken()))
+                {
+                    for (int i = 0; i < 5; i++)
+                    {
+                        logger.LogInformation("Attempting authentication");
+                        await client.WriteLine($"auth apikey={clientApiKey}");
+                        string result = await client.ReadAsync(TimeSpan.FromSeconds(1));
+                        if (result.Contains("ok"))
+                        {
+                            //await client.WriteLine($"auth apikey={clientApiKey}");
+                            logger.LogInformation("Posting names to teamspeak");
+                            await client.WriteLine($"clientupdate client_nickname={string.Join(", ", users)}");
+                            return;
+                        }
+                        await Task.Delay(100);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning(e.Message);
+                logger.LogWarning(e.StackTrace);
+            }
+#endif
+            
         }
     }
 }

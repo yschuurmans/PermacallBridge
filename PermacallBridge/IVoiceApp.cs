@@ -11,7 +11,7 @@ namespace PermacallBridge
         bool IsRunning { get; }
 
         Task<bool> AnyoneOnline();
-        void PostNames(List<string> users);
+        Task PostNames(List<string> users);
         Task Quit();
         Task Run();
     }

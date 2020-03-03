@@ -30,9 +30,13 @@ namespace PermacallBridge
 
         public async Task Loop()
         {
-            await Task.Delay(3000);
+            //await Task.Delay(3000);
+            //await discord.JoinVoice();
+            //await Task.Delay(10000);
             logger.LogInformation("Ready");
-            await CheckTeamspeak();
+            await discord.JoinVoice();
+            await Task.Delay(5000);
+            //await CheckTeamspeak();
             while (true)
             {
                 try
@@ -67,6 +71,16 @@ namespace PermacallBridge
 
             Log("Teamspeak " + (isRunning ? "is" : "isn't") + " running and there " + (areUsersOnline ? "are" : "aren't") + " users online on Discord");
 
+            
+            if (isRunning)
+            {
+                //##########################################################################
+                // TODO: Discord.Users inhoud variables zijn NULL, dus werkt nIET
+                //##########################################################################
+                Log($"Posting names: {string.Join(", ", discord.Users)}");
+                await teamspeak.PostNames(discord.Users);
+            }
+
             if (!isRunning && areUsersOnline)
             {
                 Log("Starting Teamspeak");
@@ -93,6 +107,13 @@ namespace PermacallBridge
 
             Log("Discord " + (isRunning ? "is" : "isn't") + " running and there " + (areUsersOnline ? "are" : "aren't") + " users online on Teamspeak");
 
+
+            if (isRunning)
+            {
+                Log($"Posting names: {string.Join(", ", teamspeak.Users)}");
+                await discord.PostNames(teamspeak.Users);
+            }
+
             if (!isRunning && areUsersOnline)
             {
                 Log("Starting Discord");
@@ -103,11 +124,6 @@ namespace PermacallBridge
             {
                 Log("Stopping Discord");
                 await discord.Quit();
-            }
-
-            if(isRunning)
-            {
-                discord.PostNames(teamspeak.Users);
             }
         }
 
