@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -126,7 +127,7 @@ namespace PermacallBridge
 
             var anyoneOnline = users.Count() > 0;
 
-            if (!anyoneOnline && (DateTime.Now - lastReboot).TotalMinutes > 10 && IsRunning)
+            if (!anyoneOnline && (DateTime.Now - lastReboot).TotalMinutes > 20 && IsRunning)
             {
                 Reboot();
             }
@@ -182,13 +183,18 @@ namespace PermacallBridge
 
         public async Task PostNames(List<string> users)
         {
+            var newName = string.Join(", ", users).FixNickname();
+
+
             var bridgeUser = discordClient
                 .Guilds.FirstOrDefault(x => x.Name == server)
                 .Users.FirstOrDefault(x => x.Username == username && x.Discriminator == discriminator);
 
             if (bridgeUser == null) return;
+
+            logger.LogInformation($"Posting: {newName}");
             if (users.Count > 0)
-                await bridgeUser.ModifyAsync(x => x.Nickname = string.Join(", ", users));
+                await bridgeUser.ModifyAsync(x => x.Nickname = newName);
             else
                 await bridgeUser.ModifyAsync(x => x.Nickname = username);
 

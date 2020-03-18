@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using TeamSpeak3QueryApi.Net.Specialized;
 using PrimS.Telnet;
+using System.Text.RegularExpressions;
 
 namespace PermacallBridge
 {
@@ -52,7 +53,7 @@ namespace PermacallBridge
         }
         public async Task<bool> AnyoneOnline()
         {
-           try
+            try
             {
                 string server = configuration.GetSection("Teamspeak:Server").Value;
                 string port = configuration.GetSection("Teamspeak:Port").Value;
@@ -71,7 +72,7 @@ namespace PermacallBridge
                     var anyoneOnline = channelClients.Count() > 0;
                     await rc.Logout();
 
-                    if (!anyoneOnline && (DateTime.Now - lastReboot).TotalMinutes > 10 && IsRunning)
+                    if (!anyoneOnline && (DateTime.Now - lastReboot).TotalMinutes > 60 && IsRunning)
                     {
                         Reboot();
                     }
@@ -122,13 +123,65 @@ namespace PermacallBridge
 
             return Task.CompletedTask;
         }
+        private async Task<bool> IsNicknameUsed(string nickname)
+        {
+            try
+            {
+                string server = configuration.GetSection("Teamspeak:Server").Value;
+                string port = configuration.GetSection("Teamspeak:Port").Value;
+                int dbid = Convert.ToInt32(configuration.GetSection("Teamspeak:DatabaseID").Value);
+                using (var rc = new TeamSpeakClient(server, Convert.ToInt32(port)))
+                {
+                    await ConnectAndLogin(rc);
+
+                    var clients = await rc.GetClients();
+                    return clients.Any(x => x.NickName == nickname && x.DatabaseId != dbid);
+                }
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning(e.Message);
+                logger.LogWarning(e.StackTrace);
+            }
+            return true;
+        }
+
+        private async Task<string> ChooseNewName(List<string> users)
+        {
+            string userString = string.Join(@", ", users);
+            string tempName = userString.FixNickname();
+
+            if (await IsNicknameUsed(tempName))
+            {
+                if (users.Count == 1)
+                {
+                    if (!await IsNicknameUsed(@"[D]\s" + tempName))
+                    {
+                        return @"[D]\s" + tempName;
+                    }
+                }
+
+
+                int index = 1;
+                do
+                {
+                    tempName = userString + $"({index++})";
+                } while (await IsNicknameUsed(tempName));
+            }
+
+            //tempName.FixNickname();
+                
+            return tempName.Replace(" ", @"\s");
+        }
 
         public async Task PostNames(List<string> users)
         {
+            string newName = await ChooseNewName(users);
+           
             string clientHost = configuration.GetSection("Teamspeak:Client:Host").Value;
             int clientPort = Convert.ToInt32(configuration.GetSection("Teamspeak:Client:Port").Value);
             string clientApiKey = configuration.GetSection("Teamspeak:Client:ApiKey").Value;
-#if !DEBUG
+
             //connect to telnet
             try
             {
@@ -142,9 +195,10 @@ namespace PermacallBridge
                         string result = await client.ReadAsync(TimeSpan.FromSeconds(1));
                         if (result.Contains("ok"))
                         {
+                            logger.LogInformation($"Posting: {newName}");
                             //await client.WriteLine($"auth apikey={clientApiKey}");
                             logger.LogInformation("Posting names to teamspeak");
-                            await client.WriteLine($"clientupdate client_nickname={string.Join(", ", users)}");
+                            await client.WriteLine($"clientupdate client_nickname={newName}");
                             return;
                         }
                         await Task.Delay(100);
@@ -156,8 +210,6 @@ namespace PermacallBridge
                 logger.LogWarning(e.Message);
                 logger.LogWarning(e.StackTrace);
             }
-#endif
-            
         }
     }
 }

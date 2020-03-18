@@ -74,10 +74,7 @@ namespace PermacallBridge
             
             if (isRunning)
             {
-                //##########################################################################
-                // TODO: Discord.Users inhoud variables zijn NULL, dus werkt nIET
-                //##########################################################################
-                Log($"Posting names: {string.Join(", ", discord.Users)}");
+                Log($"Posting: {string.Join(", ", discord.Users)}");
                 await teamspeak.PostNames(discord.Users);
             }
 
