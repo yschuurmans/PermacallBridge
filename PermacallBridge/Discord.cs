@@ -28,6 +28,7 @@ namespace PermacallBridge
         private readonly string voiceChannel;
         private readonly string username;
         private readonly string discriminator;
+        private string currentName = "PermacallBridge";
 
         private List<string> previousDiscordUsers = new List<string>();
 
@@ -185,6 +186,11 @@ namespace PermacallBridge
         {
             var newName = string.Join(", ", users).FixNickname();
 
+            if (currentName.ToLower() == newName.ToLower())
+            {
+                logger.LogInformation($"Canceled posting, name hasn't changed");
+                return;
+            }
 
             var bridgeUser = discordClient
                 .Guilds.FirstOrDefault(x => x.Name == server)
@@ -197,6 +203,7 @@ namespace PermacallBridge
                 await bridgeUser.ModifyAsync(x => x.Nickname = newName);
             else
                 await bridgeUser.ModifyAsync(x => x.Nickname = username);
+            currentName = newName;
 
             await CheckJoin();
         }

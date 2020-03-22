@@ -17,6 +17,7 @@ namespace PermacallBridge
         private DateTime lastReboot;
         private readonly IConfiguration configuration;
         private readonly ILogger logger;
+        private string currentName = "PermacallBridge";
 
         private const string teamspeakProcessName = "ts3client_win64";
 
@@ -177,7 +178,13 @@ namespace PermacallBridge
         public async Task PostNames(List<string> users)
         {
             string newName = await ChooseNewName(users);
-           
+
+            if (currentName.ToLower() == newName.ToLower())
+            {
+                logger.LogInformation($"Canceled posting, name hasn't changed");
+                return;
+            }
+
             string clientHost = configuration.GetSection("Teamspeak:Client:Host").Value;
             int clientPort = Convert.ToInt32(configuration.GetSection("Teamspeak:Client:Port").Value);
             string clientApiKey = configuration.GetSection("Teamspeak:Client:ApiKey").Value;
@@ -199,6 +206,7 @@ namespace PermacallBridge
                             //await client.WriteLine($"auth apikey={clientApiKey}");
                             logger.LogInformation("Posting names to teamspeak");
                             await client.WriteLine($"clientupdate client_nickname={newName}");
+                            currentName = newName;
                             return;
                         }
                         await Task.Delay(100);
