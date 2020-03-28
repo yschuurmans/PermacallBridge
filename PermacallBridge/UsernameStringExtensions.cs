@@ -16,7 +16,7 @@ namespace PermacallBridge
                 tempName = tempName.Replace("**", "*");
             }
 
-            tempName = tempName.Length > 28 ? tempName.Substring(0, 28) + "..." : tempName;
+            tempName = tempName.Length > 26 ? tempName.Substring(0, 26) + "..." : tempName;
 
             return tempName;
         }

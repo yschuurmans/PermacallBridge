@@ -36,6 +36,8 @@ namespace PermacallBridge
 
         private const string discordProcessName = "Discord";
 
+        public Func<Task> UsersChanged;
+
         public Discord(CommandService discordCommands, DiscordSocketClient discordClient, IConfiguration configuration, ILogger<Discord> logger)
         {
             this.discordCommands = discordCommands;
@@ -49,7 +51,6 @@ namespace PermacallBridge
             discriminator = configuration.GetSection("Discord:Discriminator").Value;
 
             lastReboot = DateTime.Now;
-            InitializeAsync().Wait();
         }
 
         //This is a replacement for Cursor.Position in WinForms
@@ -67,7 +68,7 @@ namespace PermacallBridge
 #if !DEBUG
             var xpos = 35;
             var ypos = 115;
-            BringMainWindowToFront(discordProcessName);
+            if (!BringMainWindowToFront(discordProcessName)) return;
             await Task.Delay(100);
             SetCursorPos(xpos, ypos);
             SetCursorPos(xpos, ypos);
@@ -78,7 +79,7 @@ namespace PermacallBridge
 
             xpos = 100;
             ypos = 263;
-            BringMainWindowToFront(discordProcessName);
+            if (!BringMainWindowToFront(discordProcessName)) return;
             SetCursorPos(xpos, ypos);
             await Task.Delay(100);
             SetCursorPos(xpos, ypos);
@@ -91,7 +92,7 @@ namespace PermacallBridge
 #endif
         }
 
-        private async Task InitializeAsync()
+        public async Task Initialize()
         {
             discordClient.Log += Log;
 
@@ -105,6 +106,15 @@ namespace PermacallBridge
             }
 
             await Task.Delay(1000);
+            discordClient.UserVoiceStateUpdated += Callback;
+        }
+
+        public async Task Callback(SocketUser user, SocketVoiceState state1, SocketVoiceState state2)
+        {
+            if(state1.VoiceChannel?.Name == voiceChannel || state2.VoiceChannel?.Name == voiceChannel)
+            {
+                await UsersChanged();
+            }
         }
 
         public bool IsRunning
@@ -139,7 +149,7 @@ namespace PermacallBridge
         private async Task Reboot()
         {
             await Quit();
-            await Run();
+            Run();
         }
 
         public Task Quit()
@@ -170,6 +180,12 @@ namespace PermacallBridge
             proc.StartInfo.FileName = @"C:\servers\teamspeak\PermacallBridge\Discord.lnk";
             proc.StartInfo.UseShellExecute = true;
             proc.Start();
+            for (int i = 0; i < 5; i++)
+            {
+                await Task.Delay(5000);
+                await CheckJoin();
+            }
+
 #endif
 
             lastReboot = DateTime.Now;
@@ -203,6 +219,7 @@ namespace PermacallBridge
                 await bridgeUser.ModifyAsync(x => x.Nickname = newName);
             else
                 await bridgeUser.ModifyAsync(x => x.Nickname = username);
+
             currentName = newName;
 
             await CheckJoin();
@@ -234,13 +251,13 @@ namespace PermacallBridge
             Restore = 9, ShowDefault = 10, ForceMinimized = 11
         };
 
-        public void BringMainWindowToFront(string processName)
+        public bool BringMainWindowToFront(string processName)
         {
             // get the process
             Process[] bProcess = Process.GetProcessesByName(processName);
 
             // check if the process is running
-            if (bProcess != null)
+            if (bProcess != null && bProcess.Length > 0)
             {
                 foreach (var process in bProcess)
                 {
@@ -258,7 +275,9 @@ namespace PermacallBridge
                     // set user the focus to the window
                     SetForegroundWindow(process.MainWindowHandle);
                 }
+                return true;
             }
+            else return false;
         }
 
         public void HideWindow(string processName)

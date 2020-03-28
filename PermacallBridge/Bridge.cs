@@ -21,6 +21,10 @@ namespace PermacallBridge
         private readonly Discord discord;
         private readonly ILogger<Bridge> logger;
 
+        private DateTime nextDiscordCheck;
+        private DateTime nextTeamspeakCheck;
+
+
         public Bridge(Teamspeak teamspeak, Discord discord, ILogger<Bridge> logger)
         {
             this.teamspeak = teamspeak;
@@ -39,27 +43,33 @@ namespace PermacallBridge
             //await CheckTeamspeak();
             while (true)
             {
-                try
+                if (DateTime.Now > nextDiscordCheck)
                 {
-                    await CheckDiscord();
-                    Thread.Sleep(10000);
-
+                    try
+                    {
+                        await CheckDiscord();
+                        nextDiscordCheck = DateTime.Now.AddSeconds(60);
+                    }
+                    catch (Exception e)
+                    {
+                        Log(e.Message);
+                        Log(e.StackTrace);
+                    }
                 }
-                catch (Exception e)
+                if (DateTime.Now > nextTeamspeakCheck)
                 {
-                    Log(e.Message);
-                    Log(e.StackTrace);
+                    try
+                    {
+                        await CheckTeamspeak();
+                        nextTeamspeakCheck = DateTime.Now.AddSeconds(60);
+                    }
+                    catch (Exception e)
+                    {
+                        Log(e.Message);
+                        Log(e.StackTrace);
+                    }
                 }
-                try
-                {
-                    await CheckTeamspeak();
-                    Thread.Sleep(10000);
-                }
-                catch (Exception e)
-                {
-                    Log(e.Message);
-                    Log(e.StackTrace);
-                }
+                Thread.Sleep(1000);
             }
         }
 
@@ -71,10 +81,11 @@ namespace PermacallBridge
 
             Log("Teamspeak " + (isRunning ? "is" : "isn't") + " running and there " + (areUsersOnline ? "are" : "aren't") + " users online on Discord");
 
-            
-            if (isRunning)
+
+            if (isRunning && areUsersOnline)
             {
                 Log($"Posting: {string.Join(", ", discord.Users)}");
+
                 await teamspeak.PostNames(discord.Users);
             }
 
@@ -124,16 +135,30 @@ namespace PermacallBridge
             }
         }
 
-        
+
 
         public async Task StartAsync(CancellationToken cancellationToken)
         {
+            await teamspeak.Initialize();
+            await discord.Initialize();
+            teamspeak.UsersChanged = async () =>
+            {
+                nextTeamspeakCheck = DateTime.Now.AddSeconds(2);
+            };
+            discord.UsersChanged = async () =>
+            {
+                nextDiscordCheck = DateTime.Now.AddSeconds(2);
+            };
+
+            nextDiscordCheck = DateTime.Now;
+            nextTeamspeakCheck = DateTime.Now.AddSeconds(30);
             await Loop();
         }
 
-        public Task StopAsync(CancellationToken cancellationToken)
+        public async Task StopAsync(CancellationToken cancellationToken)
         {
-            return Task.CompletedTask;
+            await teamspeak.Disconnect();
+            //await discord.Disconnect();
         }
 
         public void Dispose()
