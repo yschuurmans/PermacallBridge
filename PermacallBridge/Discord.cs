@@ -8,6 +8,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -29,6 +31,7 @@ namespace PermacallBridge
         private readonly string username;
         private readonly string discriminator;
         private string currentName = "PermacallBridge";
+        private bool isBridgeInChannel = false;
 
         private List<string> previousDiscordUsers = new List<string>();
 
@@ -58,12 +61,19 @@ namespace PermacallBridge
         static extern bool SetCursorPos(int x, int y);
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]
-        public static extern void mouse_event(int dwFlags, int dx, int dy, int cButtons, int dwExtraInfo);
+        static extern void mouse_event(int dwFlags, int dx, int dy, int cButtons, int dwExtraInfo);
 
-        public const int MOUSEEVENTF_LEFTDOWN = 0x02;
-        public const int MOUSEEVENTF_LEFTUP = 0x04;
+        [DllImport("user32.dll", EntryPoint = "FindWindow", SetLastError = true)]
+        static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+        [DllImport("user32.dll", EntryPoint = "SendMessage", SetLastError = true)]
+        static extern IntPtr SendMessage(IntPtr hWnd, Int32 Msg, IntPtr wParam, IntPtr lParam);
 
-        public async Task JoinVoice()
+        const int WM_COMMAND = 0x111;
+        const int MIN_ALL = 419;
+        const int MOUSEEVENTF_LEFTDOWN = 0x02;
+        const int MOUSEEVENTF_LEFTUP = 0x04;
+
+        public async Task JoinVoice(int yOffset)
         {
 #if !DEBUG
             var xpos = 35;
@@ -72,13 +82,14 @@ namespace PermacallBridge
             await Task.Delay(100);
             SetCursorPos(xpos, ypos);
             SetCursorPos(xpos, ypos);
+            if (!BringMainWindowToFront(discordProcessName)) return;
             mouse_event(MOUSEEVENTF_LEFTDOWN, xpos, ypos, 0, 0);
             await Task.Delay(100);
             mouse_event(MOUSEEVENTF_LEFTUP, xpos, ypos, 0, 0);
             await Task.Delay(100);
 
             xpos = 100;
-            ypos = 263;
+            ypos = 263 + yOffset;
             if (!BringMainWindowToFront(discordProcessName)) return;
             SetCursorPos(xpos, ypos);
             await Task.Delay(100);
@@ -180,12 +191,7 @@ namespace PermacallBridge
             proc.StartInfo.FileName = @"C:\servers\teamspeak\PermacallBridge\Discord.lnk";
             proc.StartInfo.UseShellExecute = true;
             proc.Start();
-            for (int i = 0; i < 5; i++)
-            {
-                await Task.Delay(5000);
-                await CheckJoin();
-            }
-
+            MakeSureJoin();
 #endif
 
             lastReboot = DateTime.Now;
@@ -222,17 +228,33 @@ namespace PermacallBridge
 
             currentName = newName;
 
-            await CheckJoin();
+            await MakeSureJoin();
         }
 
-        private async Task CheckJoin()
+        private async Task MakeSureJoin()
         {
-            var isBridgeInChannel = discordClient
+            for (int i = 0; i < 20; i++)
+            {
+                if (BringMainWindowToFront(discordProcessName)) break;
+                await Task.Delay(1000);
+            }
+
+            for (int i = 0; i < 5; i++)
+            {
+                if (isBridgeInChannel) return;
+                await CheckJoin(i*5);
+                await Task.Delay(2000);
+            }
+        }
+
+        private async Task CheckJoin(int yOffset)
+        {
+            isBridgeInChannel = discordClient
                 .Guilds.FirstOrDefault(x => x.Name == server)
                 .VoiceChannels.FirstOrDefault(x => x.Name == voiceChannel)
                 .Users.Any(x => x.Username == username && x.Discriminator == discriminator);
             if (!isBridgeInChannel)
-                await JoinVoice();
+                await JoinVoice(yOffset);
         }
 
         [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -253,6 +275,10 @@ namespace PermacallBridge
 
         public bool BringMainWindowToFront(string processName)
         {
+
+            IntPtr lHwnd = FindWindow("Shell_TrayWnd", null);
+            SendMessage(lHwnd, WM_COMMAND, (IntPtr)MIN_ALL, IntPtr.Zero);
+
             // get the process
             Process[] bProcess = Process.GetProcessesByName(processName);
 

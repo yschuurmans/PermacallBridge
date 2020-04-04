@@ -148,7 +148,7 @@ namespace PermacallBridge
                 {
                     await Reconnect();
                 }
-                
+
 
                 return anyoneOnline;
             }
@@ -181,12 +181,20 @@ namespace PermacallBridge
         {
             try
             {
+#if !DEBUG
                 foreach (var process in Process.GetProcessesByName(teamspeakProcessName))
                 {
-#if !DEBUG
-                    process.CloseMainWindow();
-#endif
+                    process.Close();
                 }
+                foreach (var process in Process.GetProcessesByName(teamspeakProcessName))
+                {
+                    process.CloseMainWindow();
+                }
+                foreach (var process in Process.GetProcessesByName(teamspeakProcessName))
+                {
+                    process.Kill();
+                }
+#endif
             }
             catch (Exception e)
             {

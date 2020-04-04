@@ -38,7 +38,6 @@ namespace PermacallBridge
             //await discord.JoinVoice();
             //await Task.Delay(10000);
             logger.LogInformation("Ready");
-            await discord.JoinVoice();
             await Task.Delay(5000);
             //await CheckTeamspeak();
             while (true)
@@ -48,7 +47,7 @@ namespace PermacallBridge
                     try
                     {
                         await CheckDiscord();
-                        nextDiscordCheck = DateTime.Now.AddSeconds(60);
+                        nextDiscordCheck = DateTime.Now.AddSeconds(30);
                     }
                     catch (Exception e)
                     {
@@ -61,7 +60,7 @@ namespace PermacallBridge
                     try
                     {
                         await CheckTeamspeak();
-                        nextTeamspeakCheck = DateTime.Now.AddSeconds(60);
+                        nextTeamspeakCheck = DateTime.Now.AddSeconds(30);
                     }
                     catch (Exception e)
                     {
@@ -143,15 +142,15 @@ namespace PermacallBridge
             await discord.Initialize();
             teamspeak.UsersChanged = async () =>
             {
-                nextTeamspeakCheck = DateTime.Now.AddSeconds(2);
+                nextTeamspeakCheck = DateTime.Now.AddSeconds(1);
             };
             discord.UsersChanged = async () =>
             {
-                nextDiscordCheck = DateTime.Now.AddSeconds(2);
+                nextDiscordCheck = DateTime.Now.AddSeconds(1);
             };
 
             nextDiscordCheck = DateTime.Now;
-            nextTeamspeakCheck = DateTime.Now.AddSeconds(30);
+            nextTeamspeakCheck = DateTime.Now.AddSeconds(15);
             await Loop();
         }
 
