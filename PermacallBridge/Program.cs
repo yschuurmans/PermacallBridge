@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using System;
+using System.Threading.Tasks;
 using Discord.Commands;
 using Discord.WebSocket;
 using Microsoft.Extensions.Configuration;
@@ -34,7 +35,10 @@ namespace PermacallBridge
               })
               .ConfigureServices((hostContext, services) =>
               {
-                  services.AddOptions();
+                  services.Configure<HostOptions>(option =>
+                  {
+                      option.ShutdownTimeout = TimeSpan.FromSeconds(30);
+                  });
 
                   services.AddSingleton(new CommandService());
                   services.AddSingleton(new DiscordSocketClient());
@@ -43,7 +47,8 @@ namespace PermacallBridge
                   services.AddSingleton<Discord, Discord>();
                   //services.AddSingleton(new DiscordSocketClient());
 
-                  services.AddSingleton<IHostedService, Bridge>();
+                  services.AddHostedService<Bridge>();
+
               })
               .ConfigureLogging((hostingContext, logging) => {
                   logging.AddProvider(new CompactLogger());
@@ -51,7 +56,8 @@ namespace PermacallBridge
 
                   logging.AddConfiguration(hostingContext.Configuration.GetSection("Logging"));
                   //logging.AddConsole();
-              });
+              })
+              .UseConsoleLifetime();
             await Task.Delay(1000);
             await builder.RunConsoleAsync();
         }

@@ -167,12 +167,24 @@ namespace PermacallBridge
         {
             try
             {
-                foreach (var process in Process.GetProcessesByName(discordProcessName))
-                {
+
 #if !DEBUG
-                    process.CloseMainWindow();
-#endif
+                var processes = Process.GetProcessesByName(discordProcessName);
+                foreach (var process in processes)
+                {
+                    process.Close();
                 }
+                processes = Process.GetProcessesByName(discordProcessName);
+                foreach (var process in processes)
+                {
+                    process.CloseMainWindow();
+                }
+                processes = Process.GetProcessesByName(discordProcessName);
+                foreach (var process in processes)
+                {
+                    process.CloseMainWindow();
+                }
+#endif
             }
             catch (Exception e)
             {
@@ -233,18 +245,20 @@ namespace PermacallBridge
 
         private async Task MakeSureJoin()
         {
+#if !DEBUG
             for (int i = 0; i < 20; i++)
             {
-                if (BringMainWindowToFront(discordProcessName)) break;
+                if (IsProcessStarted(discordProcessName)) break;
                 await Task.Delay(1000);
             }
 
             for (int i = 0; i < 5; i++)
             {
+                await CheckJoin(i * 5);
                 if (isBridgeInChannel) return;
-                await CheckJoin(i*5);
                 await Task.Delay(2000);
             }
+#endif
         }
 
         private async Task CheckJoin(int yOffset)
@@ -273,6 +287,15 @@ namespace PermacallBridge
             Restore = 9, ShowDefault = 10, ForceMinimized = 11
         };
 
+        public bool IsProcessStarted(string processName)
+        {
+            // get the process
+            Process[] bProcess = Process.GetProcessesByName(processName);
+
+            // check if the process is running
+            return bProcess != null && bProcess.Length > 0;
+        }
+
         public bool BringMainWindowToFront(string processName)
         {
 
@@ -283,7 +306,7 @@ namespace PermacallBridge
             Process[] bProcess = Process.GetProcessesByName(processName);
 
             // check if the process is running
-            if (bProcess != null && bProcess.Length > 0)
+            if (IsProcessStarted(processName))
             {
                 foreach (var process in bProcess)
                 {
@@ -303,7 +326,7 @@ namespace PermacallBridge
                 }
                 return true;
             }
-            else return false;
+            return false;
         }
 
         public void HideWindow(string processName)

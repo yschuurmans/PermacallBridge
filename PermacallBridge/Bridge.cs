@@ -15,21 +15,22 @@ using TeamSpeak3QueryApi.Net.Specialized;
 
 namespace PermacallBridge
 {
-    public class Bridge : IHostedService, IDisposable
+    public class Bridge : IHostedService
     {
         private readonly Teamspeak teamspeak;
         private readonly Discord discord;
         private readonly ILogger<Bridge> logger;
-
+        private readonly IHostApplicationLifetime appLifetime;
         private DateTime nextDiscordCheck;
         private DateTime nextTeamspeakCheck;
 
 
-        public Bridge(Teamspeak teamspeak, Discord discord, ILogger<Bridge> logger)
+        public Bridge(Teamspeak teamspeak, Discord discord, ILogger<Bridge> logger, IHostApplicationLifetime applicationLifetime)
         {
             this.teamspeak = teamspeak;
             this.discord = discord;
             this.logger = logger;
+            appLifetime = applicationLifetime;
         }
 
         public async Task Loop()
@@ -38,7 +39,6 @@ namespace PermacallBridge
             //await discord.JoinVoice();
             //await Task.Delay(10000);
             logger.LogInformation("Ready");
-            await Task.Delay(5000);
             //await CheckTeamspeak();
             while (true)
             {
@@ -138,6 +138,10 @@ namespace PermacallBridge
 
         public async Task StartAsync(CancellationToken cancellationToken)
         {
+            appLifetime.ApplicationStopping.Register(() =>
+            {
+                Stop();
+            });
             await teamspeak.Initialize();
             await discord.Initialize();
             teamspeak.UsersChanged = async () =>
@@ -150,18 +154,30 @@ namespace PermacallBridge
             };
 
             nextDiscordCheck = DateTime.Now;
-            nextTeamspeakCheck = DateTime.Now.AddSeconds(15);
+            nextTeamspeakCheck = DateTime.Now;
             await Loop();
         }
 
         public async Task StopAsync(CancellationToken cancellationToken)
         {
-            await teamspeak.Disconnect();
+            Stop();
             //await discord.Disconnect();
         }
 
-        public void Dispose()
+        private void Stop()
         {
+            teamspeak.UsersChanged = null;
+            discord.UsersChanged = null;
+
+            nextDiscordCheck = DateTime.Now.AddMinutes(1);
+            nextTeamspeakCheck = DateTime.Now.AddMinutes(1);
+
+            Log("Stopping Discord...");
+            discord.Quit();
+            Log("Stopping Teamspeak...");
+            teamspeak.Quit();
+            Log("Disconnecting Teamspeak...");
+            teamspeak.Disconnect().Wait();
         }
     }
 }
