@@ -13,6 +13,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 
 namespace PermacallBridge
@@ -28,6 +29,7 @@ namespace PermacallBridge
 
         private readonly string server;
         private readonly string voiceChannel;
+        private readonly string chatChannel;
         private readonly string username;
         private readonly string discriminator;
         private string currentName = "PermacallBridge";
@@ -40,6 +42,7 @@ namespace PermacallBridge
         private const string discordProcessName = "Discord";
 
         public Func<Task> UsersChanged;
+        public Func<string, string, Task> SendChatMessageEvent;
 
         public Discord(CommandService discordCommands, DiscordSocketClient discordClient, IConfiguration configuration, ILogger<Discord> logger)
         {
@@ -50,6 +53,7 @@ namespace PermacallBridge
 
             server = configuration.GetSection("Discord:Server").Value;
             voiceChannel = configuration.GetSection("Discord:Voicechannel").Value;
+            chatChannel = configuration.GetSection("Discord:Chatchannel").Value;
             username = configuration.GetSection("Discord:Username").Value;
             discriminator = configuration.GetSection("Discord:Discriminator").Value;
 
@@ -75,7 +79,7 @@ namespace PermacallBridge
 
         public async Task JoinVoice(int yOffset)
         {
-#if !DEBUG
+            //#if !DEBUG
             var xpos = 35;
             var ypos = 115;
             if (!BringMainWindowToFront(discordProcessName)) return;
@@ -88,8 +92,9 @@ namespace PermacallBridge
             mouse_event(MOUSEEVENTF_LEFTUP, xpos, ypos, 0, 0);
             await Task.Delay(100);
 
-            xpos = 100;
-            ypos = 263 + yOffset;
+            xpos = Convert.ToInt32(configuration.GetSection("Discord:Server").Value);
+            ypos = yOffset + Convert.ToInt32(configuration.GetSection("Discord:Voicechannel").Value);
+
             if (!BringMainWindowToFront(discordProcessName)) return;
             SetCursorPos(xpos, ypos);
             await Task.Delay(100);
@@ -117,16 +122,71 @@ namespace PermacallBridge
             }
 
             await Task.Delay(1000);
-            discordClient.UserVoiceStateUpdated += Callback;
+            discordClient.UserVoiceStateUpdated += ClientMoved;
+            discordClient.MessageReceived += MessageReceived;
         }
 
-        public async Task Callback(SocketUser user, SocketVoiceState state1, SocketVoiceState state2)
+        public async Task ClientMoved(SocketUser user, SocketVoiceState state1, SocketVoiceState state2)
         {
-            if(state1.VoiceChannel?.Name == voiceChannel || state2.VoiceChannel?.Name == voiceChannel)
+            if (state1.VoiceChannel?.Name == voiceChannel || state2.VoiceChannel?.Name == voiceChannel)
             {
                 await UsersChanged();
             }
         }
+
+        public async Task SendChatMessage(string message)
+        {
+            try
+            {
+                await discordClient
+                   .Guilds.FirstOrDefault(x => x.Name == server)
+                   .TextChannels.FirstOrDefault(x => x.Name == chatChannel)
+                   .SendMessageAsync(message);
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning(e.Message);
+                logger.LogWarning(e.StackTrace);
+            }
+        }
+
+        private async Task MessageReceived(SocketMessage arg)
+        {
+            try
+            {
+                if (arg.Channel.Name != chatChannel) return;
+                if (arg.Author.Username == discordClient.CurrentUser.Username && arg.Author.Discriminator == discordClient.CurrentUser.Discriminator) return;
+                var nickname = ((SocketGuildUser)arg.Author).Nickname ?? $"{arg.Author.Username}#{arg.Author.Discriminator}";
+
+                logger.LogInformation($"Received message from {nickname}: {arg.Content}, sending to Teamspeak...");
+
+
+                if (!string.IsNullOrEmpty(arg.Content))
+                    await SendChatMessageEvent(nickname, arg.Content);
+
+                if (arg.Attachments != null)
+                {
+                    foreach (var attachment in arg.Attachments)
+                    {
+                        await SendChatMessageEvent(nickname, attachment.Url);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning(e.Message);
+                logger.LogWarning(e.StackTrace);
+            }
+        }
+
+        //public async Task ChatMessageReceived(IReadOnlyCollection<TextMessage> chatMessages)
+        //{
+        //    foreach (var msg in chatMessages)
+        //    {
+        //        if (msg.TargetMode != MessageTarget.Channel) continue;
+        //        await SendChatMessage(msg.InvokerName, msg.Message);
+        //    }
+        //}
 
         public bool IsRunning
         {
@@ -220,6 +280,7 @@ namespace PermacallBridge
         {
             var newName = string.Join(", ", users).FixNickname();
 
+            
             if (currentName.ToLower() == newName.ToLower())
             {
                 logger.LogInformation($"Canceled posting, name hasn't changed");
@@ -238,6 +299,7 @@ namespace PermacallBridge
             else
                 await bridgeUser.ModifyAsync(x => x.Nickname = username);
 
+            logger.LogInformation($"Done Posting");
             currentName = newName;
 
             await MakeSureJoin();

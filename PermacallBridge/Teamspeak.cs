@@ -10,6 +10,7 @@ using TeamSpeak3QueryApi.Net.Specialized;
 using PrimS.Telnet;
 using System.Text.RegularExpressions;
 using TeamSpeak3QueryApi.Net.Specialized.Notifications;
+using TeamSpeak3QueryApi.Net.Specialized.Responses;
 
 namespace PermacallBridge
 {
@@ -19,16 +20,20 @@ namespace PermacallBridge
         private readonly IConfiguration configuration;
         private readonly ILogger logger;
 
+        private WhoAmI botClient;
         private TeamSpeakClient tsClient;
         private DateTime tsClientLifetime;
 
 
+        private string previousSimpleName = "PermacallBridge";
+        private string nickname;
         private const string teamspeakProcessName = "ts3client_win64";
 
         private List<string> previousTeamspeakUsers = new List<string>();
         public List<string> Users { get; private set; } = new List<string>();
 
         public Func<Task> UsersChanged;
+        public Func<string, string, Task> SendChatMessageEvent;
 
         public Teamspeak(IConfiguration configuration, ILogger<Teamspeak> logger)
         {
@@ -43,10 +48,47 @@ namespace PermacallBridge
             await ConnectAndLogin();
         }
 
-        public async void Callback(IReadOnlyCollection<ClientMoved> notifications)
+        public async void ClientMoved(IReadOnlyCollection<ClientMoved> notifications)
         {
             await UsersChanged();
             logger.LogInformation("Client Moved!");
+        }
+
+        public async void ChatMessageReceived(IReadOnlyCollection<TextMessage> chatMessages)
+        {
+            try
+            {
+                foreach (var msg in chatMessages)
+                {
+                    if (msg.TargetMode != MessageTarget.Channel) continue;
+                    if (msg.InvokerId == botClient.ClientId) continue;
+
+
+                    logger.LogInformation($"Received message from {msg.InvokerName}: {msg.Message}, sending to Discord...");
+
+                    await SendChatMessageEvent(msg.InvokerName, msg.Message.FixMessage());
+                }
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning(e.Message);
+                logger.LogWarning(e.StackTrace);
+            }
+        }
+
+        private int dbid;
+
+        public async Task SendChatMessage(string message)
+        {
+            try
+            {
+                await tsClient.SendMessage(message, MessageTarget.Channel, 1);
+            }
+            catch (Exception e)
+            {
+                logger.LogWarning(e.Message);
+                logger.LogWarning(e.StackTrace);
+            }
         }
 
         public bool IsRunning
@@ -84,11 +126,13 @@ namespace PermacallBridge
         {
             try
             {
+                dbid = Convert.ToInt32(configuration.GetSection("Teamspeak:DatabaseID").Value);
+
                 string server = configuration.GetSection("Teamspeak:Server").Value;
                 string port = configuration.GetSection("Teamspeak:Port").Value;
                 string username = configuration.GetSection("Teamspeak:Username").Value;
                 string password = configuration.GetSection("Teamspeak:Password").Value;
-                string nickname = configuration.GetSection("Nickname").Value;
+                nickname = configuration.GetSection("Nickname").Value;
 
                 tsClient = new TeamSpeakClient(server, Convert.ToInt32(port));
 
@@ -96,9 +140,24 @@ namespace PermacallBridge
                 await tsClient.Connect(); // connect to the server
                 await tsClient.Login(username, password); // login to do some stuff that requires permission
                 await tsClient.UseServer(1); // Use the server with id '1'
+#if DEBUG
+                await tsClient.ChangeNickName(nickname + "_DEBUG");
+#else
                 await tsClient.ChangeNickName(nickname);
+#endif
+
+
+                botClient = await tsClient.WhoAmI();
+                await tsClient.MoveClient(botClient.ClientId, 1);
+
                 await tsClient.RegisterChannelNotification(1);
-                tsClient.Subscribe<ClientMoved>(Callback);
+                tsClient.Subscribe<ClientMoved>(ClientMoved);
+
+                await tsClient.RegisterTextChannelNotification();
+                tsClient.Subscribe<TextMessage>(ChatMessageReceived);
+
+                var pChannel = await tsClient.GetChannels();
+
             }
             catch (Exception e)
             {
@@ -106,11 +165,13 @@ namespace PermacallBridge
                 logger.LogWarning(e.StackTrace);
             }
         }
+
         public async Task Disconnect()
         {
             try
             {
-                tsClient.Unsubscribe<ClientMoved>(Callback);
+                tsClient.Unsubscribe<ClientMoved>(ClientMoved);
+                tsClient.Unsubscribe<TextMessage>(ChatMessageReceived);
                 await tsClient.Logout();
                 tsClient.Dispose();
                 tsClient = null;
@@ -190,6 +251,7 @@ namespace PermacallBridge
                 {
                     process.CloseMainWindow();
                 }
+                await Task.Delay(10000);
                 foreach (var process in Process.GetProcessesByName(teamspeakProcessName))
                 {
                     process.Kill();
@@ -207,8 +269,6 @@ namespace PermacallBridge
         {
             try
             {
-                int dbid = Convert.ToInt32(configuration.GetSection("Teamspeak:DatabaseID").Value);
-
                 var clients = await tsClient.GetClients();
                 return clients.Any(x => x.NickName == nickname && x.DatabaseId != dbid);
             }
@@ -221,12 +281,12 @@ namespace PermacallBridge
             return true;
         }
 
-        private async Task<string> ChooseNewName(List<string> users)
+        private async Task<string> ChooseNewName(List<string> users, bool checkAccountUsed = false)
         {
             string userString = string.Join(@", ", users);
             string tempName = userString.FixNickname();
 
-            if (await IsNicknameUsed(tempName))
+            if (checkAccountUsed && await IsNicknameUsed(tempName))
             {
                 if (users.Count == 1)
                 {
@@ -251,7 +311,9 @@ namespace PermacallBridge
 
         public async Task PostNames(List<string> users)
         {
-            string newName = await ChooseNewName(users);
+            if (previousSimpleName == string.Join(",", users)) return;
+
+            string newName = await ChooseNewName(users, false);
             var currentName = await GetCurrentName();
 
             if (newName.Replace(@"\s", " ").ToLower() == currentName?.ToLower())
@@ -261,14 +323,13 @@ namespace PermacallBridge
             }
 
             SetName(newName);
+            previousSimpleName = string.Join(",", users);
         }
 
         private async Task<string> GetCurrentName()
         {
             try
             {
-                int dbid = Convert.ToInt32(configuration.GetSection("Teamspeak:DatabaseID").Value);
-
                 var clients = await tsClient.GetClients();
                 return clients.FirstOrDefault(x => x.DatabaseId == dbid)?.NickName;
             }

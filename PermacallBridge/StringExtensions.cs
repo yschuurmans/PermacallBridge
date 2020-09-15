@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 namespace PermacallBridge
 {
-    public static class UsernameStringExtensions
+    public static class StringExtensions
     {
         public static string FixNickname(this string name)
         {
@@ -19,6 +19,13 @@ namespace PermacallBridge
             tempName = tempName.Length > 26 ? tempName.Substring(0, 26) + "..." : tempName;
 
             return tempName;
+        }
+
+        public static string FixMessage(this string message)
+        {
+            return message
+                .Replace("[URL]", "")
+                .Replace("[/URL]", "");
         }
     }
 }

@@ -24,6 +24,8 @@ namespace PermacallBridge
         private DateTime nextDiscordCheck;
         private DateTime nextTeamspeakCheck;
 
+        private List<ChatMessage> discordMessageQueue = new List<ChatMessage>();
+        private List<ChatMessage> teamspeakMessageQueue = new List<ChatMessage>();
 
         public Bridge(Teamspeak teamspeak, Discord discord, ILogger<Bridge> logger, IHostApplicationLifetime applicationLifetime)
         {
@@ -42,6 +44,33 @@ namespace PermacallBridge
             //await CheckTeamspeak();
             while (true)
             {
+                try
+                {
+                    if (discordMessageQueue.Any())
+                    {
+                        var msg = string.Join("\n", discordMessageQueue
+                            .Select(x => $"{x.User}: {x.Message}"));
+
+                        logger.LogInformation($"Sending {msg}");
+                        discord.SendChatMessage(msg);
+                        discordMessageQueue.Clear();
+                    }
+                    if (teamspeakMessageQueue.Any())
+                    {
+                        var msg = string.Join("\n", teamspeakMessageQueue
+                            .Select(x => $"{x.User}: {x.Message}"));
+
+                        logger.LogInformation($"Sending {msg}");
+                        teamspeak.SendChatMessage(msg);
+                        teamspeakMessageQueue.Clear();
+                    }
+                }
+                catch (Exception e)
+                {
+                    Log(e.Message);
+                    Log(e.StackTrace);
+                }
+
                 if (DateTime.Now > nextDiscordCheck)
                 {
                     try
@@ -68,6 +97,7 @@ namespace PermacallBridge
                         Log(e.StackTrace);
                     }
                 }
+
                 Thread.Sleep(1000);
             }
         }
@@ -142,19 +172,63 @@ namespace PermacallBridge
             {
                 Stop();
             });
-            await teamspeak.Initialize();
-            await discord.Initialize();
-            teamspeak.UsersChanged = async () =>
-            {
-                nextTeamspeakCheck = DateTime.Now.AddSeconds(1);
-            };
-            discord.UsersChanged = async () =>
-            {
-                nextDiscordCheck = DateTime.Now.AddSeconds(1);
-            };
 
-            nextDiscordCheck = DateTime.Now;
-            nextTeamspeakCheck = DateTime.Now;
+            bool teamspeakInitialized = false;
+            while (!teamspeakInitialized)
+            {
+                try
+                {
+                    await teamspeak.Initialize();
+
+                    nextTeamspeakCheck = DateTime.Now;
+                    teamspeakInitialized = true;
+                }
+                catch (Exception)
+                {
+                    teamspeakInitialized = false;
+                }
+            }
+
+
+            bool discordInitialized = false;
+            while (!discordInitialized)
+            {
+                try
+                {
+                    await discord.Initialize();
+
+                    nextDiscordCheck = DateTime.Now;
+                    discordInitialized = true;
+                }
+                catch (Exception)
+                {
+                    discordInitialized = false;
+                }
+            }
+
+
+            teamspeak.UsersChanged = async ()
+                => nextTeamspeakCheck = DateTime.Now.AddSeconds(1);
+
+            teamspeak.SendChatMessageEvent = async (string username, string message)
+                =>
+            {
+                //discordMessageQueue.Add(new ChatMessage(username, message));
+            };
+//            await discord.SendChatMessage(username, message);
+
+
+            discord.UsersChanged = async ()
+                => nextDiscordCheck = DateTime.Now.AddSeconds(1);
+
+            discord.SendChatMessageEvent = async (string username, string message)
+                =>
+            {
+                //teamspeakMessageQueue.Add(new ChatMessage(username, message));
+            };
+            //=> await teamspeak.SendChatMessage(username, message);
+
+
             await Loop();
         }
 
@@ -175,9 +249,12 @@ namespace PermacallBridge
             Log("Stopping Discord...");
             discord.Quit();
             Log("Stopping Teamspeak...");
-            teamspeak.Quit();
+            Task tsQuit = teamspeak.Quit();
             Log("Disconnecting Teamspeak...");
-            teamspeak.Disconnect().Wait();
+            Task tsDc = teamspeak.Disconnect();
+
+            tsQuit.Wait();
+            tsDc.Wait();
         }
     }
 }
