@@ -79,7 +79,7 @@ namespace PermacallBridge
 
         public async Task JoinVoice(int yOffset)
         {
-            //#if !DEBUG
+#if !DEBUG
             var xpos = 35;
             var ypos = 115;
             if (!BringMainWindowToFront(discordProcessName)) return;
